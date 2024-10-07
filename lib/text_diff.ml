@@ -41,6 +41,14 @@ let md_to_lines name md =
   let module_str = "module " ^ name ^ ": " ^ Buffer.contents buf in
   CCString.lines module_str
 
+let cd_to_lines name cd =
+  let buf = Buffer.create 256 in
+  let formatter = Format.formatter_of_buffer buf in
+  Printtyp.class_declaration (Ident.create_local name) formatter cd;
+  Format.pp_print_flush formatter ();
+  let class_str = "class " ^ name ^ ": " ^ Buffer.contents buf in
+  CCString.lines class_str
+
 let process_value_diff (val_diff : Diff.value) =
   match val_diff.vdiff with
   | Added vd -> [ { orig = []; new_ = vd_to_lines val_diff.vname vd } ]
@@ -64,6 +72,12 @@ let process_type_diff (type_diff : Diff.type_) =
           new_ = td_to_lines type_diff.tname current;
         };
       ]
+
+let process_class_diff (class_diff : Diff.class_) =
+  match class_diff.cdiff with
+  | Added cd -> [ { orig = []; new_ = cd_to_lines class_diff.cname cd } ]
+  | Removed cd -> [ { orig = cd_to_lines class_diff.cname cd; new_ = [] } ]
+  | Modified _ -> []
 
 let from_diff (diff : Diff.module_) : t =
   let rec process_module_diff module_path (module_diff : Diff.module_) acc =
@@ -100,6 +114,12 @@ let from_diff (diff : Diff.module_) : t =
                   acc'
             | Type type_diff ->
                 let diff = process_type_diff type_diff in
+                String_map.update module_path
+                  (function
+                    | None -> Some diff | Some existing -> Some (existing @ diff))
+                  acc'
+            | Class class_diff ->
+                let diff = process_class_diff class_diff in
                 String_map.update module_path
                   (function
                     | None -> Some diff | Some existing -> Some (existing @ diff))

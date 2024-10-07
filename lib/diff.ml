@@ -17,20 +17,34 @@ type type_ = {
   tdiff : (type_declaration, type_declaration atomic_modification) t;
 }
 
+type class_modification = Unsupported
+
+and class_ = {
+  cname : string;
+  cdiff : (class_declaration, class_modification) t;
+}
+
 type module_ = {
   mname : string;
   mdiff : (module_declaration, module_modification) t;
 }
 
 and module_modification = Unsupported | Supported of sig_item list
-and sig_item = Value of value | Module of module_ | Type of type_
 
-type item_type = Value_item | Module_item | Type_item [@@deriving ord]
+and sig_item =
+  | Value of value
+  | Module of module_
+  | Type of type_
+  | Class of class_
+
+type item_type = Value_item | Module_item | Type_item | Class_item
+[@@deriving ord]
 
 type sig_items =
   | Val of value_description
   | Mod of module_declaration
   | Typ of type_declaration * Ident.t
+  | Cls of class_declaration
 
 module Sig_item_map = Map.Make (struct
   type t = item_type * string [@@deriving ord]
@@ -46,6 +60,8 @@ let extract_items items =
           Sig_item_map.add (Value_item, Ident.name id) (Val val_des) tbl
       | Sig_type (id, type_decl, _, _) ->
           Sig_item_map.add (Type_item, Ident.name id) (Typ (type_decl, id)) tbl
+      | Sig_class (id, cls_desc, _, _) ->
+          Sig_item_map.add (Class_item, Ident.name id) (Cls cls_desc) tbl
       | _ -> tbl)
     Sig_item_map.empty items
 
@@ -109,6 +125,16 @@ let value_item ~typing_env ~name ~reference ~current =
       )
   | _ -> None
 
+let class_item ~name ~reference ~current =
+  match (reference, current) with
+  | None, None -> None
+  | None, Some (Cls current) ->
+      Some (Class { cname = name; cdiff = Added current })
+  | Some (Cls reference), None ->
+      Some (Class { cname = name; cdiff = Removed reference })
+  | Some (Cls _), Some (Cls _) -> None
+  | _ -> None
+
 let rec items ~reference ~current =
   let env = Typing_env.for_diff ~reference ~current in
   let ref_items = extract_items reference in
@@ -121,7 +147,8 @@ let rec items ~reference ~current =
       | Module_item, reference, current ->
           module_item ~typing_env:env ~name ~reference ~current
       | Type_item, reference, current ->
-          type_item ~typing_env:env ~name ~reference ~current)
+          type_item ~typing_env:env ~name ~reference ~current
+      | Class_item, reference, current -> class_item ~name ~reference ~current)
     ref_items curr_items
   |> Sig_item_map.bindings |> List.map snd
 
